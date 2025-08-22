@@ -153,7 +153,18 @@
                                             [(call rest)
                                              #`(call instance (fx+ (fx* #,#,size idx) #,offset) value rest)]
                                             [(call)
-                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value)])))]))))))]))))
+                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value)])))]))))
+                                             
+                    (define-syntax #,(datum->syntax #'k
+                        (string->symbol 
+                            (string-append 
+                                (symbol->string 
+                                    (syntax->datum #'name))
+                                    "-make")))
+                        (lambda (stx)
+                            (syntax-case stx ()
+                            [(_ n)
+                            #`(make-bytevector (fx* n #,#,size) 0)])))))]))))
 
 #|
 (mys-get (in y) s)
