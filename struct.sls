@@ -12,26 +12,30 @@
     (lambda (type k)
         (cond 
             ((eq? type 'u8)
-            #'bytevector-u8-set!)
+            #'(bytevector-u8-set!))
             ((eq? type 's8)
-            #'bytevector-s8-set!)
+            #'(bytevector-s8-set!))
             (else 
             (datum->syntax k
-                (string->symbol
-                    (string-append "bytevector-" (symbol->string type) "-set!")))))))
+                (list 
+                    (string->symbol
+                        (string-append "bytevector-" (symbol->string type) "-set!"))
+                '(native-endianness)))))))
 
 ;;native or normal calls?
 (meta define type->getcall 
     (lambda (type k)
         (cond 
             ((eq? type 'u8)
-            #'bytevector-u8-ref)
+            #'(bytevector-u8-ref))
             ((eq? type 's8)
-            #'bytevector-s8-ref)
+            #'(bytevector-s8-ref))
             (else 
             (datum->syntax k
-                (string->symbol
-                    (string-append "bytevector-" (symbol->string type) "-ref")))))))
+                (list 
+                    (string->symbol
+                        (string-append "bytevector-" (symbol->string type) "-ref"))
+                '(native-endianness)))))))
 
 (meta define type->size
     (lambda (count tree type)
@@ -99,8 +103,14 @@
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
                                         [offset (car details)]                                        
-                                        [get-call (type->getcall (cadr details) #'k)])
-                                       #`(#,get-call instance #,offset (native-endianness)))]))))
+                                        ;[get-call (type->getcall (cadr details) #'k)]
+                                        )
+                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)])
+                                            (syntax-case #'get-call ()
+                                            [(call rest)
+                                             #`(call instance #,offset rest)]
+                                            [(call)
+                                             #`(call instance #,offset)])))]))))
                                        
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -115,9 +125,13 @@
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
-                                        [offset (car details)]                                        
-                                        [set-call (type->setcall (cadr details) #'k)])
-                                       #`(#,set-call instance #,offset value (native-endianness)))]))))))]))))
+                                        [offset (car details)])
+                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)])
+                                            (syntax-case #'set-call ()
+                                            [(call rest)
+                                             #`(call instance #,offset value rest)]
+                                            [(call)
+                                             #`(call instance value #,offset)])))]))))))]))))
 
 #|
 (mys-get (in y) s)
