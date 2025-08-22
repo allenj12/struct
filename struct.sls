@@ -110,7 +110,18 @@
                                             [(call rest)
                                              #`(call instance #,offset rest)]
                                             [(call)
-                                             #`(call instance #,offset)])))]))))
+                                             #`(call instance #,offset)])))]
+                                [(_ idx path instance)
+                                 (let* ([tree (lookup #'name #'name->offset)]
+                                        [p (syntax->datum #'path)]
+                                        [details (field-details tree p)]
+                                        [offset (car details)])
+                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)])
+                                            (syntax-case #'get-call ()
+                                            [(call rest)
+                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) rest)]
+                                            [(call)
+                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset))])))]))))
                                        
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -131,7 +142,18 @@
                                             [(call rest)
                                              #`(call instance #,offset value rest)]
                                             [(call)
-                                             #`(call instance value #,offset)])))]))))))]))))
+                                             #`(call instance #,offset value)])))]
+                                [(_ idx path instance value)
+                                 (let* ([tree (lookup #'name #'name->offset)]
+                                        [p (syntax->datum #'path)]
+                                        [details (field-details tree p)]
+                                        [offset (car details)])
+                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)])
+                                            (syntax-case #'set-call ()
+                                            [(call rest)
+                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value rest)]
+                                            [(call)
+                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value)])))]))))))]))))
 
 #|
 (mys-get (in y) s)
