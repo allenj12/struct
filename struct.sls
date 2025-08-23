@@ -102,9 +102,7 @@
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
-                                        [offset (car details)]                                        
-                                        ;[get-call (type->getcall (cadr details) #'k)]
-                                        )
+                                        [offset (car details)])
                                         (with-syntax ([get-call (type->getcall (cadr details) #'k)])
                                             (syntax-case #'get-call ()
                                             [(call rest)
@@ -119,9 +117,13 @@
                                         (with-syntax ([get-call (type->getcall (cadr details) #'k)])
                                             (syntax-case #'get-call ()
                                             [(call rest)
-                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) rest)]
+                                             (if (= offset 0)
+                                                #`(call instance idx rest)
+                                                #`(call instance (fx+ idx #,offset) rest))]
                                             [(call)
-                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset))])))]))))
+                                             (if (= offset 0)
+                                                #`(call instance idx)
+                                                #`(call instance (fx+ idx #,offset)))])))]))))
                                        
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -151,9 +153,13 @@
                                         (with-syntax ([set-call (type->setcall (cadr details) #'k)])
                                             (syntax-case #'set-call ()
                                             [(call rest)
-                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value rest)]
+                                            (if (= offset 0)
+                                                #`(call instance idx value rest)
+                                                #`(call instance (fx+ idx #,offset) value rest))]
                                             [(call)
-                                             #`(call instance (fx+ (fx* #,#,size idx) #,offset) value)])))]))))
+                                             (if (= offset 0)
+                                                #`(call instance idx value)
+                                                #`(call instance (fx+ idx #,offset) value))])))]))))
                                              
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
