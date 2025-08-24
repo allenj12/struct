@@ -37,27 +37,41 @@
                         (string-append "bytevector-" (symbol->string type) "-ref"))
                 '(native-endianness)))))))
 
+(meta define struct-offsets
+    (lambda (c t)
+      (if (null? t)
+          '()
+          (let ([n (car t)]) 
+            (cons (list (car n) c (caddr n)) (struct-offsets (fx+ c (cadr n)) (cdr t)))))))
+
+(meta define union-offsets
+    (lambda (t)
+        (map (lambda (n) (list (car n) 0 (caddr n))) t)))
+
 (meta define type->size
-    (lambda (count tree type)
+    (lambda (tree type)
       (syntax-case type ()
         [((struct name (t n r ...) rest ...) more ...)
          (eq? (syntax->datum #'struct) 'struct)
-         (let* ([p (type->size count (list #'name) #'((t n r ...) rest ...))]
-                [size (car p)]
-                [new-tree (cdr p)])
+         (let* ([pre-tree (type->size '() #'((t n r ...) rest ...))]
+                [size (apply fx+ (map cadr pre-tree))]
+                [new-tree (append (list #'name size) (list (struct-offsets 0 pre-tree)))])
                 (if (null? (syntax->datum #'(more ...)))
-                    (cons size (append tree (list new-tree)))
-                    (type->size size (append tree (list new-tree)) #'(more ...))))]
+                    (append tree (list new-tree))
+                    (type->size (append tree (list new-tree)) #'(more ...))))]
+        [((union name (t n r ...) rest ...) more ...)
+         (eq? (syntax->datum #'union) 'union)
+         (let* ([pre-tree (type->size '() #'((t n r ...) rest ...))]
+                [size (apply fxmax (map cadr pre-tree))]
+                [new-tree (append (list #'name size) (list (union-offsets pre-tree)))])
+                (if (null? (syntax->datum #'(more ...)))
+                    (append tree (list new-tree))
+                    (type->size (append tree (list new-tree)) #'(more ...))))]
         [((t n r ...) rest ...)
          (if (null? (syntax->datum #'(rest ...)))
-            (cons
-                (fx+ count 
-                     (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))))
-                (append tree (list (list #'n (fx/ count 8) #'t))))
-            (type->size 
-                (fx+ count
-                    (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))))
-                (append tree (list (list #'n (fx/ count 8) #'t)))
+                (append tree (list (list #'n (fx/ (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))) 8) #'t)))
+            (type->size
+                (append tree (list (list #'n (fx/ (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))) 8) #'t)))
                 #'(rest ...)))])))
 
 (define-syntax type-sizeof
@@ -68,25 +82,34 @@
          #`'#,(datum->syntax #'* (r #'id #'name->size))]))))
 
 (meta define field-details
-    (lambda (tree path)
-      (let* ([k (car path)]
-             [child (filter (lambda (p) (eq? (car p) k)) tree)]) ;;can error check if child is length 1
-        (if (null? (cdr path))
-            (cdar child)
-            (field-details (cdar child) (cdr path))))))
+      (lambda (tree path)
+        (let* ([k (car path)]                              ;;cdr to skip struct size
+               [child (assq k tree)]) ;;can error check if child is length 1
+          (if (null? (cdr path))
+              (cdr child)
+              (field-details (caddr child) (cdr path))))))
+
+(meta define sum-paths
+    (lambda (sum tree)
+      (if (symbol? tree)
+          tree
+          (fold-right cons '() 
+            (map (lambda (n) 
+                   (let ([new-offset (fx+ (cadr n) sum)])
+                     (list (car n) new-offset (sum-paths new-offset (caddr n))))) tree)))))
 
 (define-syntax define-type
     (lambda (stx)
         (syntax-case stx ()
         [(k (t name r ...))
-         (let* ([walk (type->size 0 '() #'((t name r ...)))]
-                [size (fx/ (car walk) 8)]
-                [paths (cdadr walk)])
+         (let* ([walk (type->size '() #'((t name r ...)))]
+                [size (cadar walk)]
+                [paths (caddar walk)])
                #`(begin
                     (define-syntax name
                         (lambda (stx)
                             (syntax-violation 'name "invalid use of keyword" stx)))
-                    (define-property name name->offset (syntax->datum (syntax #,paths))) ;;hack to fix raw symbol output error for now
+                    (define-property name name->offset (sum-paths 0 (syntax->datum (syntax #,paths)))) ;;hack to fix raw symbol output error for now
                     (define-property name name->size #,size)
                     
                     (define-syntax #,(datum->syntax #'k
@@ -173,24 +196,12 @@
                             #`(make-bytevector (fx* n #,#,size) 0)])))))]))))
 
 #|
-(mys-get (in y) s)
-
 (define-type 
       (struct mys 
           (u8 x)
           (struct in (u8 y) (u16 t))
           (u16 z)
           (struct anotha (u32 zz))))))
-
-((x 0) (in (y 8) (z 8)))
-
-(define-syntax #,(datum->syntax #'k
-                    (string->symbol 
-                        (string-append 
-                            (symbol->string 
-                                (syntax->datum #'name))
-                            "-size")))
-                (lambda (_) #',size))
 
 (define-syntax get-property 
  (lambda (x)

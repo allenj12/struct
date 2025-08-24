@@ -1,5 +1,5 @@
 # STRUCT
-implements structs in bytevectors, still early in development and only handles structs (no unions/arrays yet).
+implements structs in bytevectors, still early in development and only handles structs and unions (no arrays yet).
 
 ## Example
 
