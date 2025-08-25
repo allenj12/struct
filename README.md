@@ -1,20 +1,42 @@
 # STRUCT
-implements structs in bytevectors, still early in development and only handles structs and unions (no arrays yet).
+implements structs in bytevectors. Currently only handles signed and unsigned ints with structs/unions/arrays.
 
 ## Example
 
 ```
-(import (struct struct))
-(define-type 
-    (struct mys 
-        (u8 a)
-        (struct in (u8 b) (u16 c))
-        (u16 d)
-        (struct inner' (u32 e))))
+> (import (struct struct))
+> (define-type
+    (struct a
+      (array b 
+        (struct c 
+          (u8 f) 
+          (array inner 
+            (union z 
+              (u32 a) 
+              (u16 b)) 
+            2))
+          3)
+      (array d (u16 e) 1)))
 
-(define v (make-bytevector (type-sizeof mys) 0))
-
-(mys-set! (in b) v 3)
-
-(mys-get (in b) v) => 3
+;;macro, no fn call overhead
+> (type-sizeof a)
+29
+> (define v (a-make 2))
+> v
+#vu8(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+> (a-set! (b 2 f) v 5)
+> (a-get (b 2 f) v)
+5
+> ;; optional index parameter (default is 0) to select from the multiple elements in the one bytevector
+  ;; uses TOTAL byte index for now, to make looping slightly faster by avoiding uneeded multiplications
+  (a-get (fx* (type-sizeof a) 1) (b 2 f) v)
+0
+> ;;nested arrays and unions of course work here
+  (a-set! (b 1 inner 0 a) v (fx1- (expt 2 32)))
+> (a-get (b 1 inner 0 a) v)
+4294967295
+> (a-set! (b 1 inner 0 b) v 0)
+> (a-get (b 1 inner 0 a) v)
+4294901760
 ```

@@ -48,6 +48,10 @@
     (lambda (t)
         (map (lambda (n) (list (car n) 0 (caddr n))) t)))
 
+(meta define array-offsets
+    (lambda (t-size t)
+        (map (lambda (n) (list (car n) (list t-size) (caddr n))) t)))
+
 (meta define type->size
     (lambda (tree type)
       (syntax-case type ()
@@ -67,6 +71,15 @@
                 (if (null? (syntax->datum #'(more ...)))
                     (append tree (list new-tree))
                     (type->size (append tree (list new-tree)) #'(more ...))))]
+        [((array name (t n r ...) arr-size) more ...)
+         (eq? (syntax->datum #'array) 'array)
+         (let* ([pre-tree (type->size '() #'((t n r ...)))]
+                [t-size (cadar pre-tree)]
+                [size (fx* t-size (syntax->datum #'arr-size))]
+                [new-tree (append (list #'name size) (list (array-offsets t-size pre-tree)))])
+                (if (null? (syntax->datum #'(more ...)))
+                    (append tree (list new-tree))
+                    (type->size (append tree (list new-tree)) #'(more ...))))]
         [((t n r ...) rest ...)
          (if (null? (syntax->datum #'(rest ...)))
                 (append tree (list (list #'n (fx/ (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))) 8) #'t)))
@@ -83,8 +96,10 @@
 
 (meta define field-details
       (lambda (tree path)
-        (let* ([k (car path)]                              ;;cdr to skip struct size
-               [child (assq k tree)]) ;;can error check if child is length 1
+        (let* ([k (car path)]
+               [child (if (number? k)
+                          (car tree)
+                          (assq k tree))]) ;;can error check if child is length 1
           (if (null? (cdr path))
               (cdr child)
               (field-details (caddr child) (cdr path))))))
@@ -95,8 +110,24 @@
           tree
           (fold-right cons '() 
             (map (lambda (n) 
-                   (let ([new-offset (fx+ (cadr n) sum)])
-                     (list (car n) new-offset (sum-paths new-offset (caddr n))))) tree)))))
+                    (let ([offset (cadr n)])
+                        (cond 
+                            ((and (number? offset) (number? sum))
+                             (let ([new-offset (fx+ offset sum)])
+                                (list (car n) new-offset (sum-paths new-offset (caddr n)))))
+                            
+                            ((and (list? offset) (list? sum)) ;'(some-size) & '((sizes ...) rel-offsets ...)
+                             (let ([new-offset (cons (append (car sum) offset) (cdr sum))])
+                                (list (car n) new-offset (sum-paths new-offset (caddr n)))))
+                             
+                            ((list? sum) ; 10 & '((sizes ...) rel-offsets ...)
+                             (let ([new-offset (list (car sum) (fx+ offset (cadr sum)))])
+                                (list (car n) new-offset (sum-paths new-offset (caddr n)))))
+                                
+                            (else ; '(some-size) & 10
+                             (let ([new-offset (list offset sum)])
+                                (list (car n) new-offset (sum-paths new-offset (caddr n))))))))
+                tree)))))
 
 (define-syntax define-type
     (lambda (stx)
@@ -126,27 +157,37 @@
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
                                         [offset (car details)])
-                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)])
+                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)]
+                                                      [offset (if (number? offset) 
+                                                                   offset
+                                                                   (cons #'fx+
+                                                                        (cons (cadr offset)
+                                                                         (map (lambda (a b) #`(fx* #,a #,b))
+                                                                              (car offset)
+                                                                              (filter number? p)))))])
                                             (syntax-case #'get-call ()
                                             [(call rest)
-                                             #`(call instance #,offset rest)]
+                                             #`(call instance offset rest)]
                                             [(call)
-                                             #`(call instance #,offset)])))]
+                                             #`(call instance offset)])))]
                                 [(_ idx path instance)
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
                                         [offset (car details)])
-                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)])
+                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)]
+                                                      [offset (if (number? offset) 
+                                                                   offset
+                                                                   (cons #'fx+
+                                                                        (cons (cadr offset)
+                                                                         (map (lambda (a b) #`(fx* #,a #,b))
+                                                                              (car offset)
+                                                                              (filter number? p)))))])
                                             (syntax-case #'get-call ()
                                             [(call rest)
-                                             (if (= offset 0)
-                                                #`(call instance idx rest)
-                                                #`(call instance (fx+ idx #,offset) rest))]
+                                             #`(call instance (fx+ idx offset) rest)]
                                             [(call)
-                                             (if (= offset 0)
-                                                #`(call instance idx)
-                                                #`(call instance (fx+ idx #,offset)))])))]))))
+                                             #`(call instance (fx+ idx offset))])))]))))
                                        
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -162,27 +203,37 @@
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
                                         [offset (car details)])
-                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)])
+                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)]
+                                                      [offset (if (number? offset) 
+                                                                   offset
+                                                                   (cons #'fx+
+                                                                        (cons (cadr offset)
+                                                                         (map (lambda (a b) #`(fx* #,a #,b))
+                                                                              (car offset)
+                                                                              (filter number? p)))))])
                                             (syntax-case #'set-call ()
                                             [(call rest)
-                                             #`(call instance #,offset value rest)]
+                                             #`(call instance offset value rest)]
                                             [(call)
-                                             #`(call instance #,offset value)])))]
+                                             #`(call instance offset value)])))]
                                 [(_ idx path instance value)
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [p (syntax->datum #'path)]
                                         [details (field-details tree p)]
                                         [offset (car details)])
-                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)])
+                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)]
+                                                      [offset (if (number? offset) 
+                                                                   offset
+                                                                   (cons #'fx+
+                                                                        (cons (cadr offset)
+                                                                         (map (lambda (a b) #`(fx* #,a #,b))
+                                                                              (car offset)
+                                                                              (filter number? p)))))])
                                             (syntax-case #'set-call ()
                                             [(call rest)
-                                            (if (= offset 0)
-                                                #`(call instance idx value rest)
-                                                #`(call instance (fx+ idx #,offset) value rest))]
+                                             #`(call instance (fx+ idx offset) value rest)]
                                             [(call)
-                                             (if (= offset 0)
-                                                #`(call instance idx value)
-                                                #`(call instance (fx+ idx #,offset) value))])))]))))
+                                             #`(call instance (fx+ idx offset) value)])))]))))
                                              
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -196,12 +247,12 @@
                             #`(make-bytevector (fx* n #,#,size) 0)])))))]))))
 
 #|
-(define-type 
-      (struct mys 
-          (u8 x)
-          (struct in (u8 y) (u16 t))
-          (u16 z)
-          (struct anotha (u32 zz))))))
+(define-type
+    (struct a
+      (u8 i)
+      (union z (struct b (u8 c) (arary 10 arr (struct o (s8 l) (s8 x)))) (u32 h))
+      (struct e (u32 f) (u32 g))
+      (u64 zz)))
 
 (define-syntax get-property 
  (lambda (x)
