@@ -260,13 +260,6 @@
                             #`(make-bytevector (fx* n #,#,size) 0)])))))]))))
 
 #|
-(define-type
-    (struct a
-      (u8 i)
-      (union z (struct b (u8 c) (arary 10 arr (struct o (s8 l) (s8 x)))) (u32 h))
-      (struct e (u32 f) (u32 g))
-      (u64 zz)))
-
 (define-syntax get-property 
  (lambda (x)
     (lambda (r)
