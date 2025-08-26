@@ -1,5 +1,5 @@
 # STRUCT
-implements structs in bytevectors. Currently only handles signed and unsigned ints with structs/unions/arrays.
+implements structs in bytevectors. Currently handles ints(signed and unsigned)/chars/bools/float32/float64 with structs/unions/arrays.
 
 ## Example
 

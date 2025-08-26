@@ -9,33 +9,51 @@
 
 ;;native or normal calls?
 (meta define type->setcall 
-    (lambda (type k)
-        (cond 
-            ((eq? type 'u8)
-            #'(bytevector-u8-set!))
-            ((eq? type 's8)
-            #'(bytevector-s8-set!))
+    (lambda (type instance offset value k)
+        (case type
+            ('u8
+            #`(bytevector-u8-set! #,instance #,offset #,value))
+            ('s8
+            #`(bytevector-s8-set! #,instance #,offset #,value))
+            ('f32
+             #`(bytevector-ieee-single-set! #,instance #,offset #,value (native-endianness)))
+            ('f64
+             #`(bytevector-ieee-double-set! #,instance #,offset #,value (native-endianness)))
+            ('char 
+             #`(bytevector-u8-set! #,instance #,offset (char->integer #,value)))
+            ('bool 
+             #`(bytevector-u8-set! #,instance #,offset (if #,value 1 0)))
             (else 
-            (datum->syntax k
-                (list 
-                    (string->symbol
-                        (string-append "bytevector-" (symbol->string type) "-set!"))
-                '(native-endianness)))))))
+                #`(#,(datum->syntax k
+                        (string->symbol
+                            (string-append "bytevector-" (symbol->string type) "-set!")))
+                    #,instance
+                    #,offset
+                    #,value
+                    (native-endianness))))))
 
-;;native or normal calls?
 (meta define type->getcall 
-    (lambda (type k)
-        (cond 
-            ((eq? type 'u8)
-            #'(bytevector-u8-ref))
-            ((eq? type 's8)
-            #'(bytevector-s8-ref))
+    (lambda (type instance offset k)
+        (case type
+            ('u8
+            #`(bytevector-u8-ref #,instance #,offset))
+            ('s8
+            #`(bytevector-s8-ref #,instance #,offset))
+            ('f32
+             #`(bytevector-ieee-single-ref #,instance #,offset (native-endianness)))
+            ('f64
+             #`(bytevector-ieee-double-ref #,instance #,offset (native-endianness)))
+            ('char 
+             #`(integer->char (bytevector-u8-ref #,instance #,offset)))
+            ('bool 
+             #`(if (not (= 0 (bytevector-u8-ref #,instance #,offset))) #t #f))
             (else 
-            (datum->syntax k
-                (list 
-                    (string->symbol
-                        (string-append "bytevector-" (symbol->string type) "-ref"))
-                '(native-endianness)))))))
+                #`(#,(datum->syntax k
+                        (string->symbol
+                            (string-append "bytevector-" (symbol->string type) "-ref")))
+                    #,instance
+                    #,offset
+                    (native-endianness))))))
 
 (meta define struct-offsets
     (lambda (c t)
@@ -86,10 +104,18 @@
                     (type->size (append tree (list new-tree)) #'(more ...))))]
         [((t n r ...) rest ...)
          (if (null? (syntax->datum #'(rest ...)))
-                (append tree (list (list #'n (fx/ (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))) 8) #'t)))
-            (type->size
-                (append tree (list (list #'n (fx/ (string->number (list->string (cdr (string->list (symbol->string (syntax->datum #'t)))))) 8) #'t)))
-                #'(rest ...)))])))
+                (let* ([sym (syntax->datum #'t)]
+                       [s (if (or (eq? sym 'bool) (eq? sym 'char))
+                              1
+                              (fx/ (string->number (list->string (cdr (string->list (symbol->string sym))))) 8))])
+                    (append tree (list (list #'n s #'t))))
+                 (let* ([sym (syntax->datum #'t)]
+                        [s (if (or (eq? sym 'bool) (eq? sym 'char))
+                              1
+                              (fx/ (string->number (list->string (cdr (string->list (symbol->string sym))))) 8))])
+                    (type->size
+                        (append tree (list (list #'n s #'t)))
+                        #'(rest ...))))])))
 
 (define-syntax type-sizeof
   (lambda (x)
@@ -149,7 +175,7 @@
                     (define-syntax name
                         (lambda (stx)
                             (syntax-violation 'name "invalid use of keyword" stx)))
-                    (define-property name name->offset (sum-paths 0 (syntax->datum (syntax #,paths)))) ;;hack to fix raw symbol output error for now
+                    (define-property name name->offset (sum-paths 0 (syntax->datum (syntax #,paths)))) ;;hack to fix raw symbol output error for now, we can also get rid of this completely now
                     (define-property name name->size #,size)
                     
                     (define-syntax #,(datum->syntax #'k
@@ -167,38 +193,28 @@
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
                                         [offset (car details)])
-                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)]
-                                                      [offset (if (number? offset) 
+                                        (with-syntax ([offset (if (number? offset) 
                                                                    offset
                                                                    (cons #'fx+
                                                                         (cons (cadr offset)
                                                                          (map (lambda (a b) #`(fx* #,a #,b))
                                                                               (car offset)
                                                                               array-idxs))))])
-                                            (syntax-case #'get-call ()
-                                            [(call rest)
-                                             #`(call instance offset rest)]
-                                            [(call)
-                                             #`(call instance offset)])))]
+                                            (type->getcall (cadr details) #'instance #'offset #'k)))]
                                 [(_ idx path instance)
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
                                         [offset (car details)])
-                                        (with-syntax ([get-call (type->getcall (cadr details) #'k)]
-                                                      [offset (if (number? offset) 
+                                        (with-syntax ([offset (if (number? offset) 
                                                                    offset
                                                                    (cons #'fx+
                                                                         (cons (cadr offset)
                                                                          (map (lambda (a b) #`(fx* #,a #,b))
                                                                               (car offset)
                                                                               array-idxs))))])
-                                            (syntax-case #'get-call ()
-                                            [(call rest)
-                                             #`(call instance (fx+ idx offset) rest)]
-                                            [(call)
-                                             #`(call instance (fx+ idx offset))])))]))))
+                                            (type->getcall (cadr details) #'instance #'(fx+ idx offset) #'k)))]))))
                                        
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
@@ -215,38 +231,28 @@
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
                                         [offset (car details)])
-                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)]
-                                                      [offset (if (number? offset) 
+                                        (with-syntax ([offset (if (number? offset) 
                                                                    offset
                                                                    (cons #'fx+
                                                                         (cons (cadr offset)
                                                                          (map (lambda (a b) #`(fx* #,a #,b))
                                                                               (car offset)
                                                                               array-idxs))))])
-                                            (syntax-case #'set-call ()
-                                            [(call rest)
-                                             #`(call instance offset value rest)]
-                                            [(call)
-                                             #`(call instance offset value)])))]
+                                             (type->setcall (cadr details) #'instance #'offset #'value #'k)))]
                                 [(_ idx path instance value)
                                  (let* ([tree (lookup #'name #'name->offset)]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
                                         [offset (car details)])
-                                        (with-syntax ([set-call (type->setcall (cadr details) #'k)]
-                                                      [offset (if (number? offset) 
+                                        (with-syntax ([offset (if (number? offset) 
                                                                    offset
                                                                    (cons #'fx+
                                                                         (cons (cadr offset)
                                                                          (map (lambda (a b) #`(fx* #,a #,b))
                                                                               (car offset)
                                                                               array-idxs))))])
-                                            (syntax-case #'set-call ()
-                                            [(call rest)
-                                             #`(call instance (fx+ idx offset) value rest)]
-                                            [(call)
-                                             #`(call instance (fx+ idx offset) value)])))]))))
+                                             (type->setcall (cadr details) #'instance #`(fx+ idx offset) #'value #'k)))]))))
                                              
                     (define-syntax #,(datum->syntax #'k
                         (string->symbol 
