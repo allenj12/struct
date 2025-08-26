@@ -7,15 +7,13 @@ implements structs in bytevectors. Currently handles ints(signed and unsigned)/c
 > (import (struct struct))
 > (define-type
     (struct a
-      (array b 
-        (struct c 
+      (array b 3
+        (struct c
           (u8 f) 
-          (array inner 
+          (array inner 2
             (union z 
               (u32 a) 
-              (u16 b)) 
-            2))
-          3)
+              (u16 b)))))
       (array d (u16 e) 1)))
 
 ;;macro, no fn call overhead

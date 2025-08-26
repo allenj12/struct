@@ -89,7 +89,7 @@
                     (if (null? (syntax->datum #'(more ...)))
                         (append tree (list new-tree))
                         (type->size (append tree (list new-tree)) #'(more ...))))]
-        [((array name (t n r ...) arr-size) more ...)
+        [((array name arr-size (t n r ...)) more ...)
          (eq? (syntax->datum #'array) 'array)
          (let* ([pre-tree (type->size '() #'((t n r ...)))]
                 [t-size (cadar pre-tree)]
@@ -171,10 +171,11 @@
 (define-syntax define-type
     (lambda (stx)
         (syntax-case stx ()
-        [(k (t name r ...))
-         (let* ([walk (type->size '() #'((t name r ...)))]
+        [(k (t n r ...))
+         (let* ([walk (type->size '() #'((t n r ...)))]
                 [size (cadar walk)]
                 [paths (caddar walk)])
+                (with-syntax ([name (caar walk)])
                #`(begin
                     (define-syntax name
                         (lambda (stx)
@@ -267,7 +268,7 @@
                         (lambda (stx)
                             (syntax-case stx ()
                             [(_ n)
-                            #`(make-bytevector (fx* n #,#,size) 0)])))))]))))
+                            #`(make-bytevector (fx* n #,#,size) 0)]))))))]))))
 
 #|
 (define-syntax get-property 
