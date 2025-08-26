@@ -14,7 +14,7 @@ implements structs in bytevectors. Currently handles ints(signed and unsigned)/c
             (union z 
               (u32 a) 
               (u16 b)))))
-      (array d (u16 e) 1)))
+      (array d 1 (u16 e))))
 
 ;;macro, no fn call overhead
 > (type-sizeof a)

@@ -59,7 +59,7 @@
     (lambda (c t)
       (if (null? t)
           '()
-          (let ([n (car t)]) 
+          (let ([n (car t)])
             (cons (list (car n) c (caddr n)) (struct-offsets (fx+ c (cadr n)) (cdr t)))))))
 
 (meta define union-offsets
@@ -97,7 +97,7 @@
                 [new-tree (append (list #'name size) (list (array-offsets t-size pre-tree)))])
                 (if (null? (syntax->datum #'(more ...)))
                     (append tree (list new-tree))
-                    (type->size (append tree (list new-tree (syntax array))) #'(more ...))))]
+                    (type->size (append tree (list new-tree)) #'(more ...))))]
         [((t n r ...) rest ...)
          (if (null? (syntax->datum #'(rest ...)))
                 (let* ([sym (syntax->datum #'t)]
@@ -119,7 +119,7 @@
       (syntax-case x ()
         [(_ id)
          #`'#,(datum->syntax #'* (r #'id #'name->size))]))))
-
+                
 (meta define field-details
       (lambda (tree p idxs)
         (syntax-case p ()
@@ -152,8 +152,8 @@
                             ((and (list? offset) (list? sum)) ;'(some-size) & '((sizes ...) rel-offsets ...)
                              (let ([new-offset (cons (append (car sum) offset) (cdr sum))])
                                 (append 
-                                    (list (car n) new-offset (sum-paths new-offset (caddr n)))))
-                                    (cdddr n))
+                                    (list (car n) new-offset (sum-paths new-offset (caddr n)))
+                                    (cdddr n))))
                              
                             ((list? sum) ; 10 & '((sizes ...) rel-offsets ...)
                              (let ([new-offset (list (car sum) (fx+ offset (cadr sum)))])
