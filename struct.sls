@@ -7,7 +7,6 @@
 (define name->offset)
 (define name->size)
 
-;;native or normal calls?
 (meta define type->setcall 
     (lambda (type instance offset value k)
         (case type
@@ -46,7 +45,7 @@
             ('char 
              #`(integer->char (bytevector-u8-ref #,instance #,offset)))
             ('bool 
-             #`(if (not (= 0 (bytevector-u8-ref #,instance #,offset))) #t #f))
+             #`(not (= 0 (bytevector-u8-ref #,instance #,offset))))
             (else 
                 #`(#,(datum->syntax k
                         (string->symbol
