@@ -4,7 +4,7 @@ implements structs in bytevectors. Currently handles uints/ints/chars/bools/floa
 ## Example
 
 A complex type to show nesting works etc...
-```
+```scheme
 > (import (struct struct))
 > (define-type
     (struct a
@@ -19,13 +19,13 @@ A complex type to show nesting works etc...
 ```
 
 Can get the size with this macro
-```
+```scheme
 > (type-sizeof a)
 29
 ```
 
 A helper to make bytevectors with the appropriate size
-```
+```scheme
 > (define v (a-make 2))
 > v
 #vu8(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -34,7 +34,7 @@ A helper to make bytevectors with the appropriate size
 ```
 
 getters and setters...
-```
+```scheme
 > (a-set! (b 2 f) v 5)
 > (a-get (b 2 f) v)
 5
@@ -45,7 +45,7 @@ getters and setters...
 ```
 
 nested arrays and unions of course work here
-```
+```scheme
   (a-set! (b 1 inner 0 a) v (fx1- (expt 2 32)))
 > (a-get (b 1 inner 0 a) v)
 4294967295
@@ -55,7 +55,7 @@ nested arrays and unions of course work here
 ```
 
 you can also refer to other types
-```
+```scheme
 > (define-type (struct circle (u32 radius)))
 > (define-type (struct triangle (u32 height) (u32 base)))
 > (define-type
