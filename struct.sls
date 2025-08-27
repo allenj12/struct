@@ -70,33 +70,33 @@
         (map (lambda (n) (list (car n) (list t-size) (caddr n) #'array)) t)))
 
 (meta define type->size
-    (lambda (tree type)
+    (lambda (tree type lookup)
       (syntax-case type ()
-        [((struct name (t n r ...) rest ...) more ...)
+        [((struct name sub-type rest ...) more ...)
          (eq? (syntax->datum #'struct) 'struct)
-            (let* ([pre-tree (type->size '() #'((t n r ...) rest ...))]
+            (let* ([pre-tree (type->size '() #'(sub-type rest ...) lookup)]
                     [size (apply fx+ (map cadr pre-tree))]
                     [new-tree (append (list #'name size) (list (struct-offsets 0 pre-tree)))])
                     (if (null? (syntax->datum #'(more ...)))
                         (append tree (list new-tree))
-                        (type->size (append tree (list new-tree)) #'(more ...))))]
-        [((union name (t n r ...) rest ...) more ...)
+                        (type->size (append tree (list new-tree)) #'(more ...) lookup)))]
+        [((union name sub-type rest ...) more ...)
          (eq? (syntax->datum #'union) 'union)
-            (let* ([pre-tree (type->size '() #'((t n r ...) rest ...))]
+            (let* ([pre-tree (type->size '() #'(sub-type rest ...) lookup)]
                     [size (apply fxmax (map cadr pre-tree))]
                     [new-tree (append (list #'name size) (list (union-offsets pre-tree)))])
                     (if (null? (syntax->datum #'(more ...)))
                         (append tree (list new-tree))
-                        (type->size (append tree (list new-tree)) #'(more ...))))]
-        [((array name arr-size (t n r ...)) more ...)
+                        (type->size (append tree (list new-tree)) #'(more ...) lookup)))]
+        [((array name arr-size sub-type) more ...)
          (eq? (syntax->datum #'array) 'array)
-         (let* ([pre-tree (type->size '() #'((t n r ...)))]
+         (let* ([pre-tree (type->size '() #'(sub-type) lookup)]
                 [t-size (cadar pre-tree)]
                 [size (fx* t-size (syntax->datum #'arr-size))]
                 [new-tree (append (list #'name size) (list (array-offsets t-size pre-tree)))])
                 (if (null? (syntax->datum #'(more ...)))
                     (append tree (list new-tree))
-                    (type->size (append tree (list new-tree)) #'(more ...))))]
+                    (type->size (append tree (list new-tree)) #'(more ...) lookup)))]
         [((t n r ...) rest ...)
          (if (null? (syntax->datum #'(rest ...)))
                 (let* ([sym (syntax->datum #'t)]
@@ -110,7 +110,16 @@
                               (fx/ (string->number (list->string (cdr (string->list (symbol->string sym))))) 8))])
                     (type->size
                         (append tree (list (list #'n s #'t)))
-                        #'(rest ...))))])))
+                        #'(rest ...)
+                        lookup)))]
+        [(sub-type rest ...)
+         (identifier? #'sub-type)
+         (let ([existing-type (lookup #'sub-type #'name->offset)])
+            (if existing-type
+                (if (null? #'(rest ...))
+                    (append tree existing-type)
+                    (type->size (append tree existing-type) #'(rest ...) lookup))
+                (syntax-violation 'sub-type "cannot find referenced type" #'sub-type)))])))
 
 (define-syntax type-sizeof
   (lambda (x)
@@ -169,17 +178,17 @@
 
 (define-syntax define-type
     (lambda (stx)
+        (lambda (lookup)
         (syntax-case stx ()
         [(k (t n r ...))
-         (let* ([walk (type->size '() #'((t n r ...)))]
-                [size (cadar walk)]
-                [paths (caddar walk)])
+         (let* ([walk (type->size '() #'((t n r ...)) lookup)]
+                [size (cadar walk)])
                 (with-syntax ([name (caar walk)])
                #`(begin
                     (define-syntax name
                         (lambda (stx)
                             (syntax-violation 'name "invalid use of keyword" stx)))
-                    (define-property name name->offset (sum-paths 0 (syntax->datum (syntax #,paths)))) ;;hack to fix raw symbol output error for now, we can also get rid of this completely now
+                    (define-property name name->offset (syntax #,walk)) ;;hack to fix raw symbol output error for now.
                     (define-property name name->size #,size)
                     
                     (define-syntax #,(datum->syntax #'k
@@ -192,7 +201,7 @@
                             (lambda (lookup)
                                 (syntax-case stx ()
                                 [(_ path instance)
-                                 (let* ([tree (lookup #'name #'name->offset)]
+                                 (let* ([tree (sum-paths 0 (caddar (syntax->datum (syntax #,walk))))]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
@@ -206,7 +215,7 @@
                                                                               array-idxs))))])
                                             (type->getcall (cadr details) #'instance #'offset #'k)))]
                                 [(_ idx path instance)
-                                 (let* ([tree (lookup #'name #'name->offset)]
+                                 (let* ([tree (sum-paths 0 (caddar (syntax->datum (syntax #,walk))))]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
@@ -230,7 +239,7 @@
                             (lambda (lookup)
                                 (syntax-case stx ()
                                 [(_ path instance value)
-                                 (let* ([tree (lookup #'name #'name->offset)]
+                                 (let* ([tree (sum-paths 0 (caddar (syntax->datum (syntax #,walk))))]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
@@ -244,7 +253,7 @@
                                                                               array-idxs))))])
                                              (type->setcall (cadr details) #'instance #'offset #'value #'k)))]
                                 [(_ idx path instance value)
-                                 (let* ([tree (lookup #'name #'name->offset)]
+                                 (let* ([tree (sum-paths 0 (caddar (syntax->datum (syntax #,walk))))]
                                         [fd (field-details tree #'path '())]
                                         [details (car fd)]
                                         [array-idxs (cdr fd)]
@@ -267,7 +276,7 @@
                         (lambda (stx)
                             (syntax-case stx ()
                             [(_ n)
-                            #`(make-bytevector (fx* n #,#,size) 0)]))))))]))))
+                            #`(make-bytevector (fx* n #,#,size) 0)]))))))])))))
 
 #|
 (define-syntax get-property 
